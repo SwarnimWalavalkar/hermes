@@ -37,8 +37,23 @@ export function RedisService(
   }
 
   async function disconnect() {
+    await deleteConsumer();
+
     subscriber.disconnect();
     publisher.disconnect();
+  }
+
+  async function deleteConsumer() {
+    try {
+      const keys = await subscriber.keys(`${redisOptions.keyPrefix}*`);
+
+      for (const key of keys) {
+        await subscriber.xgroup("DELCONSUMER", key, groupName, consumerName);
+      }
+    } catch (error) {
+      console.error("[HERMES] Error deleting consumer");
+      throw error;
+    }
   }
 
   async function addToStream(

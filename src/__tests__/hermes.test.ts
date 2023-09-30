@@ -5,8 +5,9 @@ import {
   it,
   beforeAll,
   expectTypeOf,
+  vi,
 } from "vitest";
-import { Hermes, IHermes } from "..";
+import { Hermes, IHermes, IMsg } from "..";
 import { Redis } from "ioredis";
 import { z } from "zod";
 
@@ -17,7 +18,6 @@ const redisConfig = {
 };
 
 const testRedis = new Redis({ ...redisConfig });
-const KEY_PREFIX = "hermes:";
 
 describe("Initialize", async () => {
   it("should establish a connection and initialize successfully", async () => {
@@ -50,12 +50,27 @@ describe("Message Bus", async () => {
     const msgPayload: z.infer<typeof payloadSchema> = { message: "hello" };
 
     const event = await hermes.registerEvent(topic, payloadSchema);
+    const eventCallback = {
+      fn: async ({
+        msg,
+        data,
+      }: {
+        msg: IMsg;
+        data: z.infer<typeof payloadSchema>;
+      }) => {
+        console.log("Message received:", data);
 
-    event.subscribe(async ({ data }) => {
-      expect(data).toMatchObject(msgPayload);
-    });
+        await msg.ack();
+      },
+    };
 
+    const callbackFnSpy = vi.spyOn(eventCallback, "fn");
+
+    event.subscribe(eventCallback.fn);
     await event.publish(msgPayload);
+
+    await new Promise((resolve) => setTimeout(resolve, 24));
+    expect(callbackFnSpy).toHaveBeenCalledOnce();
   });
 
   afterAll(async () => {
@@ -75,7 +90,6 @@ describe("Service", async () => {
 
   it("should request a reply for a service", async () => {
     const topic = "say-hello";
-    const key = `${KEY_PREFIX}${topic}`;
 
     const requestSchema = z.object({ name: z.string() });
     const responseSchema = z.object({ message: z.string() });
@@ -106,6 +120,11 @@ describe("Service", async () => {
 });
 
 afterAll(async () => {
-  await testRedis.flushall();
+  await testRedis.keys(`hermes:*`, async (_, keys) => {
+    if (!!keys && keys.length > 0) {
+      await testRedis.del(keys);
+    }
+  });
+
   testRedis.disconnect();
 });

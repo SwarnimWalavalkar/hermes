@@ -41,8 +41,9 @@ const main = async () => {
     messagePayloadSchema
   );
 
-  userSignUpEvent.subscribe(async ({ data }) => {
+  userSignUpEvent.subscribe(async ({ data, msg }) => {
     console.log("RECEIVED USER SIGNUP EVENT", data);
+    await msg.ack();
   });
 
   await userSignUpEvent.publish({
@@ -50,6 +51,9 @@ const main = async () => {
     username: "testUser",
     deviceType: "desktop",
   });
+
+  await new Promise((resolve) => setTimeout(resolve, 24));
+  await hermesTest.disconnect();
 };
 
 main();

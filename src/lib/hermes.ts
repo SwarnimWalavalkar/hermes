@@ -6,7 +6,7 @@ import { z } from "zod";
 
 type Maybe<T> = T | null | undefined;
 
-export interface IBus {
+interface IBus {
   subscribe<T>(
     topic: string,
     callback: (msgData: { data: T; msgId: string }) => Promise<void>
@@ -14,12 +14,14 @@ export interface IBus {
   publish<T>(topic: string, data: T): Promise<void>;
 }
 
-export interface Event<MessagePayload> {
+export interface IMsg {
+  id: string;
+  ack: () => Promise<void>;
+}
+
+export interface IEvent<MessagePayload> {
   subscribe(
-    fn: (msgData: {
-      data: MessagePayload;
-      msgId: string;
-    }) => void | Promise<void>
+    fn: (msgData: { data: MessagePayload; msg: IMsg }) => void | Promise<void>
   ): Promise<void>;
   publish(data: MessagePayload): Promise<void>;
 }
@@ -40,7 +42,7 @@ export interface IHermes {
   registerEvent<MessagePayload>(
     topic: string,
     payloadSchema: z.Schema<MessagePayload>
-  ): Promise<Event<MessagePayload>>;
+  ): Promise<IEvent<MessagePayload>>;
   registerService<RequestType, ResponseType>(
     topic: string,
     requestSchema: z.Schema<RequestType>,
@@ -90,7 +92,7 @@ export function Hermes({
         count
       );
 
-      if (!results || !results?.length) {
+      if (!results || !results.length) {
         continue;
       }
 
@@ -103,11 +105,11 @@ export function Hermes({
   async function registerEvent<MessagePayload>(
     topic: string,
     payloadSchema: z.Schema<MessagePayload>
-  ): Promise<Event<MessagePayload>> {
+  ): Promise<IEvent<MessagePayload>> {
     async function subscribe(
       callback: (msgData: {
         data: MessagePayload;
-        msgId: string;
+        msg: { id: string; ack: () => Promise<void> };
       }) => Promise<void>
     ) {
       try {
@@ -128,10 +130,13 @@ export function Hermes({
               throw new Error("Message Parse Error");
             }
 
-            /** @TODO Remove this and require messages to be manually acknowledged */
-            await redisService.ackMessages(topic, groupName, msgId);
-
-            await callback({ data: parsedData, msgId });
+            await callback({
+              data: parsedData,
+              msg: {
+                id: msgId,
+                ack: () => redisService.ackMessages(topic, groupName, msgId),
+              },
+            });
           }
         }
       } catch (error) {
@@ -139,10 +144,11 @@ export function Hermes({
         throw error;
       }
     }
-    async function publish(reqData: MessagePayload): Promise<void> {
+
+    async function publish(payload: MessagePayload): Promise<void> {
       let parsedData: MessagePayload;
       try {
-        parsedData = payloadSchema.parse(reqData);
+        parsedData = payloadSchema.parse(payload);
       } catch (error) {
         console.error(`[HERMES] Message Bus: ${topic}, message parse error`);
         throw new Error("Message Parse Error");
@@ -171,7 +177,6 @@ export function Hermes({
             const data: T = JSON.parse(message[1][1]);
             const msgId: string = String(message[0]);
 
-            /** @TODO Remove this and require messages to be manually acknowledged */
             await redisService.ackMessages(topic, groupName, msgId);
 
             await callback({ data, msgId });
