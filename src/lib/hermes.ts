@@ -86,15 +86,17 @@ export function Hermes({
   }
 
   async function* getStreamMessageGenerator(streamName: string, count: number) {
+    let fetchNewMessages = true;
     while (isAlive) {
-      const results = await redisService.readStreamAsConsumerGroup(
-        streamName,
-        count
-      );
+      const results = fetchNewMessages
+        ? await redisService.readStreamAsConsumerGroup(streamName, count)
+        : await redisService.autoClaimMessages(streamName, count);
 
       if (!results || !results.length) {
         continue;
       }
+
+      fetchNewMessages = !fetchNewMessages;
 
       for (const message of results) {
         yield message;

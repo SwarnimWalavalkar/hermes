@@ -2,6 +2,13 @@
 
 Type safe message bus, and "request-response" style services. Powered by Redis Streams
 
+# Features
+
+- Type-safety
+- Schema validation with [Zod](https://github.com/colinhacks/zod)
+- Horizontally scalable
+- Message acknowledgement and failover across consumers
+
 # Example
 
 Type-Safe Service
@@ -12,16 +19,15 @@ Type-Safe Message Bus
 
 # Improvement Ideas
 
-- Connection Pooling for Redis
-- Consumer transfer on timeout
-- Custom Logger
-  - Custom logging options
-- Worker threads for subscriptions
-- Better observability tools
+- [ ] Connection Pooling for Redis
+- [x] Consumer transfer on timeout
+- [ ] Custom Logger
+  - [ ] log levels
+- [ ] Worker threads for subscriptions
+- [ ] Better observability tools
 
 ### New Features
 
-- Job scheduler
-- ... ?
+- [ ] Job scheduler
 
 # Contributing

@@ -20,7 +20,14 @@ export interface RedisService {
     blockMs?: number,
     group?: string,
     consumer?: string
-  ): Promise<string | null>;
+  ): Promise<Array<string> | null>;
+  autoClaimMessages(
+    streamName: string,
+    count?: number,
+    group?: string,
+    consumer?: string,
+    minIdleTime?: number
+  ): Promise<Array<string> | null>;
 }
 
 export function RedisService(
@@ -108,7 +115,7 @@ export function RedisService(
     blockMs: number = 1,
     group: string = groupName,
     consumer: string = consumerName
-  ): Promise<string | null> {
+  ): Promise<Array<string> | null> {
     try {
       const results: string[][] = (await subscriber.xreadgroup(
         "GROUP",
@@ -126,7 +133,7 @@ export function RedisService(
       if (results && results.length && results[0]) {
         const [_key, messages] = results[0];
 
-        if (messages) return messages;
+        if (messages) return messages as unknown as string[];
       }
       return null;
     } catch (error: any) {
@@ -140,11 +147,42 @@ export function RedisService(
     }
   }
 
+  async function autoClaimMessages(
+    streamName: string,
+    count: number = 1,
+    group: string = groupName,
+    consumer: string = consumerName,
+    minIdleTime: number = 5000
+  ): Promise<Array<string> | null> {
+    try {
+      const results: string[][] = (await subscriber.xautoclaim(
+        streamName,
+        group,
+        consumer,
+        minIdleTime,
+        "0-0",
+        "COUNT",
+        count
+      )) as string[][];
+
+      if (results && results.length && results[0]) {
+        const [_key, messages] = results[0];
+
+        if (messages) return messages as unknown as string[];
+      }
+      return null;
+    } catch (error: any) {
+      console.error(`[HERMES] Error auto claiming messages: ${error.message}`);
+      throw error;
+    }
+  }
+
   return {
     connect,
     disconnect,
     addToStream,
     ackMessages,
+    autoClaimMessages,
     createConsumerGroup,
     readStreamAsConsumerGroup,
   };
