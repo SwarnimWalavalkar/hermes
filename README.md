@@ -7,7 +7,10 @@ Type safe message bus, and "request-response" style services. Powered by Redis S
 - Type-safety
 - Schema validation with [Zod](https://github.com/colinhacks/zod)
 - Horizontally scalable
-- Message acknowledgement and failover across consumers
+- Highly reliable (guaranteed at-least-once message delivery)
+  - at-least-once system
+  - consumers need to explicitly acknowledge that a message has been processed
+  - If (when) a consumer dies, all of the pending messages assigned to that consumer are transferred to another consumer after a timeout
 
 # Example
 

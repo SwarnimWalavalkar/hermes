@@ -52,12 +52,27 @@ export function RedisService(
 
   async function deleteConsumer() {
     try {
-      const keys = await subscriber.keys(`${redisOptions.keyPrefix}*`);
+      const key = `${redisOptions.keyPrefix}*`;
 
-      for (const key of keys) {
-        await subscriber.xgroup("DELCONSUMER", key, groupName, consumerName);
+      const keys = await subscriber.keys(key);
+
+      if (keys.length) {
+        for (const key of keys) {
+          const groups: string[] = (await subscriber.xinfo(
+            "GROUPS",
+            key
+          )) as string[];
+
+          if (groups.length)
+            await subscriber.xgroup(
+              "DELCONSUMER",
+              key,
+              groupName,
+              consumerName
+            );
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[HERMES] Error deleting consumer");
       throw error;
     }
