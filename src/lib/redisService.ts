@@ -58,12 +58,29 @@ export function RedisService(
 
       if (keys.length) {
         for (const key of keys) {
-          const groups: string[] = (await subscriber.xinfo(
+          const groupsRes: string[][] = (await subscriber.xinfo(
             "GROUPS",
             key
-          )) as string[];
+          )) as string[][];
 
-          if (groups.length)
+          const groups = groupsRes.map(
+            (grp) =>
+              new Map(
+                grp.reduce(
+                  (acc, val, i) =>
+                    (i % 2
+                      ? // @ts-expect-error ignore
+                        acc[acc.length - 1].push(val)
+                      : // @ts-expect-error ignore
+                        acc.push([val])) && acc,
+                  []
+                )
+              )
+          );
+
+          const groupNames = groups.map((grp) => grp.get("name"));
+
+          if (groupsRes.length && groupNames.includes(groupName))
             await subscriber.xgroup(
               "DELCONSUMER",
               key,
