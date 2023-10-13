@@ -29,6 +29,7 @@ jobs:
         with:
           node-version: 18.x
           registry-url: "https://registry.npmjs.org"
+          scope: "@swarnim"
           cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile
