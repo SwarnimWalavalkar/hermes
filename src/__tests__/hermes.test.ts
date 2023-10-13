@@ -24,6 +24,7 @@ describe("Initialize", async () => {
     const hermes = await Hermes({
       durableName: "hermesTest",
       redisOptions: { ...redisConfig },
+      poolOptions: { min: 0, max: 20 },
     }).connect();
 
     await hermes.disconnect();
@@ -38,6 +39,7 @@ describe("Message Bus", async () => {
     hermes = await Hermes({
       durableName: "hermesTest",
       redisOptions: { ...redisConfig },
+      poolOptions: { min: 0, max: 20 },
     }).connect();
   });
 
@@ -82,6 +84,7 @@ describe("Service", async () => {
     hermes = await Hermes({
       durableName: "hermesTest",
       redisOptions: { ...redisConfig },
+      poolOptions: { min: 0, max: 20 },
     }).connect();
   });
 

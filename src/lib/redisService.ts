@@ -1,4 +1,5 @@
 import Redis, { RedisOptions } from "ioredis";
+import { PoolOptions, RedisPool } from "./redisPool";
 
 export interface RedisService {
   connect(): Promise<void>;
@@ -31,28 +32,34 @@ export interface RedisService {
 }
 
 export function RedisService(
-  redisOptions: RedisOptions,
+  options: RedisOptions & { poolOptions: PoolOptions },
   groupName: string,
   consumerName: string
 ): RedisService {
-  let subscriber: Redis;
   let publisher: Redis;
 
+  let redisPool: RedisPool;
+
   async function connect() {
-    subscriber = new Redis({ ...redisOptions });
-    publisher = new Redis({ ...redisOptions });
+    const { poolOptions, ...redisOptions } = options;
+
+    redisPool = new RedisPool(redisOptions, poolOptions);
+
+    publisher = await redisPool.getConnection();
   }
 
   async function disconnect() {
     await deleteConsumer();
 
-    subscriber.disconnect();
-    publisher.disconnect();
+    await redisPool.release(publisher);
+
+    await redisPool.end();
   }
 
   async function deleteConsumer() {
+    const subscriber = await redisPool.getConnection();
     try {
-      const key = `${redisOptions.keyPrefix}*`;
+      const key = `${options.keyPrefix}*`;
 
       const keys = await subscriber.keys(key);
 
@@ -89,7 +96,11 @@ export function RedisService(
             );
         }
       }
+
+      await redisPool.release(subscriber);
     } catch (error: any) {
+      await redisPool.release(subscriber);
+
       console.error("[HERMES] Error deleting consumer");
       throw error;
     }
@@ -113,24 +124,34 @@ export function RedisService(
     groupName: string,
     ...messageIds: Array<string>
   ) {
+    const subscriber = await redisPool.getConnection();
     try {
       await subscriber.xack(streamName, groupName, ...messageIds);
+
+      await redisPool.release(subscriber);
     } catch (error: any) {
+      await redisPool.release(subscriber);
+
       console.error(`[HERMES] Error acknowledging messages: ${error.message}`);
       throw error;
     }
   }
 
   async function createConsumerGroup(streamName: string, groupName: string) {
+    const subscriber = await redisPool.getConnection();
     try {
       await subscriber.xgroup(
         "CREATE",
-        `${redisOptions.keyPrefix}${streamName}`,
+        `${options.keyPrefix}${streamName}`,
         groupName,
         "0",
         "MKSTREAM"
       );
+
+      await redisPool.release(subscriber);
     } catch (error: any) {
+      await redisPool.release(subscriber);
+
       if (error.message.includes("BUSYGROUP")) {
         return;
       }
@@ -148,6 +169,7 @@ export function RedisService(
     group: string = groupName,
     consumer: string = consumerName
   ): Promise<Array<string> | null> {
+    const subscriber = await redisPool.getConnection();
     try {
       const results: string[][] = (await subscriber.xreadgroup(
         "GROUP",
@@ -162,6 +184,8 @@ export function RedisService(
         ">"
       )) as string[][];
 
+      await redisPool.release(subscriber);
+
       if (results && results.length && results[0]) {
         const [_key, messages] = results[0];
 
@@ -169,6 +193,8 @@ export function RedisService(
       }
       return null;
     } catch (error: any) {
+      await redisPool.release(subscriber);
+
       if (error.message.includes("NOGROUP")) {
         console.log(`${error.message} ...CREATING GROUP`);
         await createConsumerGroup(streamName, group);
@@ -186,6 +212,7 @@ export function RedisService(
     consumer: string = consumerName,
     minIdleTime: number = 5000
   ): Promise<Array<string> | null> {
+    const subscriber = await redisPool.getConnection();
     try {
       const results: string[][] = (await subscriber.xautoclaim(
         streamName,
@@ -197,6 +224,8 @@ export function RedisService(
         count
       )) as string[][];
 
+      await redisPool.release(subscriber);
+
       if (results && results.length && results[0]) {
         const [_key, messages] = results[0];
 
@@ -204,6 +233,8 @@ export function RedisService(
       }
       return null;
     } catch (error: any) {
+      await redisPool.release(subscriber);
+
       console.error(`[HERMES] Error auto claiming messages: ${error.message}`);
       throw error;
     }

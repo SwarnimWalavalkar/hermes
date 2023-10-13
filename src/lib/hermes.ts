@@ -3,6 +3,7 @@ import { RedisOptions } from "ioredis";
 import { randomBytes } from "crypto";
 import sleep from "../utils/sleep";
 import { z } from "zod";
+import { PoolOptions } from "./redisPool";
 
 type Maybe<T> = T | null | undefined;
 
@@ -55,9 +56,11 @@ const KEY_PREFIX = "hermes:";
 export function Hermes({
   durableName,
   redisOptions,
+  poolOptions,
 }: {
   durableName: string;
   redisOptions: RedisOptions;
+  poolOptions: PoolOptions;
 }): IHermes {
   let redisService: RedisService;
   let isAlive = false;
@@ -67,7 +70,11 @@ export function Hermes({
 
   async function connect() {
     redisService = RedisService(
-      { ...redisOptions, keyPrefix: KEY_PREFIX },
+      {
+        ...redisOptions,
+        keyPrefix: KEY_PREFIX,
+        poolOptions,
+      },
       groupName,
       consumerName
     );

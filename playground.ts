@@ -3,6 +3,7 @@ import { Hermes } from "./src";
 
 const main = async () => {
   const hermesTest = await Hermes({
+    poolOptions: { min: 0, max: 20 },
     durableName: "playground",
     redisOptions: {},
   }).connect();
