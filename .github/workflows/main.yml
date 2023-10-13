@@ -8,7 +8,7 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -19,6 +19,9 @@ jobs:
         with:
           node-version: 18.x
           cache: "pnpm"
+      - uses: supercharge/redis-github-action@1.7.0
+        with:
+          redis-version: 7
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check && pnpm run build
