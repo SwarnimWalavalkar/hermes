@@ -226,10 +226,10 @@ export function RedisService(
 
       await redisPool.release(subscriber);
 
-      if (results && results.length && results[0]) {
-        const [_key, messages] = results[0];
+      const [_, messages] = results;
 
-        if (messages) return messages as unknown as string[];
+      if (messages && messages.length) {
+        return messages;
       }
       return null;
     } catch (error: any) {

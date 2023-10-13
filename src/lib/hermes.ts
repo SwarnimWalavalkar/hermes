@@ -102,11 +102,11 @@ export function Hermes({
         ? await redisService.readStreamAsConsumerGroup(streamName, count)
         : await redisService.autoClaimMessages(streamName, count);
 
+      fetchNewMessages = !fetchNewMessages;
+
       if (!results || !results.length) {
         continue;
       }
-
-      fetchNewMessages = !fetchNewMessages;
 
       for (const message of results) {
         yield message;
