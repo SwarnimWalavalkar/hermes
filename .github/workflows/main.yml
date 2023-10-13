@@ -11,15 +11,22 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: pnpm/action-setup@v2
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
           version: 8.6
-      - uses: actions/setup-node@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
         with:
           node-version: 18.x
           cache: "pnpm"
-      - uses: supercharge/redis-github-action@1.7.0
+
+      - name: Setup Redis
+        uses: supercharge/redis-github-action@1.7.0
         with:
           redis-version: alpine
 
