@@ -2,11 +2,10 @@ import { z } from "zod";
 import { Hermes } from "./src";
 
 const main = async () => {
-  const hermesTest = Hermes({
+  const hermesTest = await Hermes({
     durableName: "playground",
     redisOptions: {},
-  });
-  await hermesTest.connect();
+  }).connect();
 
   const sayHelloService = await hermesTest.registerService(
     "say-hello",

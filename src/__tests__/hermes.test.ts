@@ -21,12 +21,11 @@ const testRedis = new Redis({ ...redisConfig });
 
 describe("Initialize", async () => {
   it("should establish a connection and initialize successfully", async () => {
-    const hermes = Hermes({
+    const hermes = await Hermes({
       durableName: "hermesTest",
       redisOptions: { ...redisConfig },
-    });
+    }).connect();
 
-    await hermes.connect();
     await hermes.disconnect();
 
     expect(hermes).toBeDefined();
@@ -36,11 +35,10 @@ describe("Initialize", async () => {
 describe("Message Bus", async () => {
   let hermes: IHermes;
   beforeAll(async () => {
-    hermes = Hermes({
+    hermes = await Hermes({
       durableName: "hermesTest",
       redisOptions: { ...redisConfig },
-    });
-    await hermes.connect();
+    }).connect();
   });
 
   it("should publish and subscribe to a topic", async () => {
@@ -81,11 +79,10 @@ describe("Message Bus", async () => {
 describe("Service", async () => {
   let hermes: IHermes;
   beforeAll(async () => {
-    hermes = Hermes({
+    hermes = await Hermes({
       durableName: "hermesTest",
       redisOptions: { ...redisConfig },
-    });
-    await hermes.connect();
+    }).connect();
   });
 
   it("should request a reply for a service", async () => {

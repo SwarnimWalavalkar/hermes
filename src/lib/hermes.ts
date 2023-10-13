@@ -37,7 +37,7 @@ export interface IService<RequestType, ResponseType> {
 }
 
 export interface IHermes {
-  connect(): Promise<void>;
+  connect(): Promise<IHermes>;
   disconnect(): Promise<void>;
   registerEvent<MessagePayload>(
     topic: string,
@@ -75,6 +75,9 @@ export function Hermes({
     await redisService.connect();
 
     isAlive = true;
+
+    // @ts-expect-error ignore
+    return this;
   }
 
   async function disconnect() {
