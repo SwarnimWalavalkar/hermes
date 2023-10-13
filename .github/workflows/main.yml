@@ -21,7 +21,7 @@ jobs:
           cache: "pnpm"
       - uses: supercharge/redis-github-action@1.7.0
         with:
-          redis-version: 7
+          redis-version: alpine
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check && pnpm run build
