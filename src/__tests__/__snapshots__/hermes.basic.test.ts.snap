@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Service > should request a reply for a service 1`] = `
+{
+  "message": "Hello, Joe!",
+}
+`;
