@@ -1,9 +1,11 @@
-import { RedisService } from "./redisService";
+import { RedisService } from "./redis/redisService";
 import { RedisOptions } from "ioredis";
+import { Redis as UpstashRedis } from "@upstash/redis";
 import { randomBytes } from "crypto";
 import sleep from "../utils/sleep";
 import { z } from "zod";
-import { PoolOptions } from "./redisPool";
+import { PoolOptions } from "./redis/redisPool";
+import { UpstashRedisService } from "./redis/upstashRedis";
 
 type Maybe<T> = T | null | undefined;
 
@@ -37,6 +39,17 @@ export interface IService<RequestType, ResponseType> {
   request(reqData: RequestType): Promise<ResponseType>;
 }
 
+export type HermesConfig = {
+  durableName: string;
+} & (
+  | {
+      persistanceType: "REDIS";
+      redisOptions: RedisOptions;
+      poolOptions?: PoolOptions;
+    }
+  | { persistanceType: "UPSTASH"; upstashRedis: UpstashRedis }
+);
+
 export interface IHermes {
   connect(): Promise<IHermes>;
   disconnect(): Promise<void>;
@@ -52,34 +65,41 @@ export interface IHermes {
 }
 
 const KEY_PREFIX = "hermes:";
+const DEFAULT_POOL_OPTIONS = { min: 0, max: 20 };
 
-export function Hermes({
-  durableName,
-  redisOptions,
-  poolOptions,
-}: {
-  durableName: string;
-  redisOptions: RedisOptions;
-  poolOptions: PoolOptions;
-}): IHermes {
-  let redisService: RedisService;
+export function Hermes(config: HermesConfig): IHermes {
+  let redisService: RedisService | UpstashRedisService;
   let isAlive = false;
 
   const consumerName = randomBytes(16).toString("hex");
-  const groupName = durableName;
+  const groupName = config.durableName;
 
   async function connect() {
-    redisService = RedisService(
-      {
-        ...redisOptions,
-        keyPrefix: KEY_PREFIX,
-        poolOptions,
-      },
-      groupName,
-      consumerName
-    );
+    if (config.persistanceType === "REDIS") {
+      if (!config.poolOptions) {
+        config.poolOptions = DEFAULT_POOL_OPTIONS;
+      }
 
-    await redisService.connect();
+      redisService = RedisService(
+        {
+          ...config.redisOptions,
+          keyPrefix: KEY_PREFIX,
+          poolOptions: config.poolOptions,
+        },
+        groupName,
+        consumerName
+      );
+
+      await redisService.connect();
+    }
+    if (config.persistanceType === "UPSTASH") {
+      redisService = UpstashRedisService(
+        config.upstashRedis,
+        { keyPrefix: KEY_PREFIX },
+        groupName,
+        consumerName
+      );
+    }
 
     isAlive = true;
 
@@ -92,7 +112,13 @@ export function Hermes({
 
     await sleep(100);
 
-    await redisService.disconnect();
+    if (config.persistanceType === "REDIS") {
+      // @ts-expect-error ignore
+      await redisService.disconnect();
+    } else if (config.persistanceType === "UPSTASH") {
+      // @ts-expect-error ignore
+      await redisService.cleanup();
+    }
   }
 
   async function* getStreamMessageGenerator(streamName: string, count: number) {

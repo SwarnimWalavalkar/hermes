@@ -16,8 +16,8 @@ describe("Queue", async () => {
   beforeAll(async () => {
     hermes = await Hermes({
       durableName: "hermesTest",
+      persistanceType: "REDIS",
       redisOptions: { ...redisConfig },
-      poolOptions: { min: 0, max: 20 },
     }).connect();
   });
 
