@@ -1,9 +1,9 @@
 import { RedisService } from "./redisService";
-import { RedisOptions } from "ioredis";
-import { randomBytes } from "crypto";
-import sleep from "../utils/sleep";
-import { z } from "zod";
 import { PoolOptions } from "./redisPool";
+import { RedisOptions } from "ioredis";
+import sleep from "../utils/sleep";
+import { randomBytes } from "crypto";
+import { z } from "zod";
 
 type Maybe<T> = T | null | undefined;
 
@@ -15,8 +15,16 @@ interface IBus {
   publish<T>(topic: string, data: T): Promise<void>;
 }
 
+export interface RedisMessage<T> {
+  data: T;
+  maxRetries: number;
+  retryCount: number;
+}
+
 export interface IMsg {
   id: string;
+  retryCount: number;
+  maxRetries: number;
   ack: () => Promise<void>;
 }
 
@@ -24,7 +32,10 @@ export interface IEvent<MessagePayload> {
   subscribe(
     fn: (msgData: { data: MessagePayload; msg: IMsg }) => void | Promise<void>
   ): Promise<void>;
-  publish(data: MessagePayload): Promise<void>;
+  publish(
+    data: MessagePayload,
+    options?: { maxRetries?: number }
+  ): Promise<void>;
 }
 
 export interface IService<RequestType, ResponseType> {
@@ -42,7 +53,8 @@ export interface IHermes {
   disconnect(): Promise<void>;
   registerEvent<MessagePayload>(
     topic: string,
-    payloadSchema: z.Schema<MessagePayload>
+    payloadSchema: z.Schema<MessagePayload>,
+    options?: { maxRetries?: number }
   ): Promise<IEvent<MessagePayload>>;
   registerService<RequestType, ResponseType>(
     topic: string,
@@ -52,6 +64,7 @@ export interface IHermes {
 }
 
 const KEY_PREFIX = "hermes:";
+const DEFAULT_MAX_RETRIES = 3;
 
 export function Hermes({
   durableName,
@@ -104,6 +117,23 @@ export function Hermes({
 
       fetchNewMessages = !fetchNewMessages;
 
+      const nextScheduledMsg = await redisService.getNextScheduledMessage<
+        RedisMessage<string>
+      >(streamName);
+
+      if (nextScheduledMsg) {
+        await redisService.addToStream(
+          streamName,
+          "*",
+          "data",
+          nextScheduledMsg.msgData.data,
+          "maxRetries",
+          String(nextScheduledMsg.msgData.maxRetries),
+          "retryCount",
+          String(nextScheduledMsg.msgData.retryCount)
+        );
+      }
+
       if (!results || !results.length) {
         continue;
       }
@@ -116,25 +146,44 @@ export function Hermes({
 
   async function registerEvent<MessagePayload>(
     topic: string,
-    payloadSchema: z.Schema<MessagePayload>
+    payloadSchema: z.Schema<MessagePayload>,
+    { maxRetries = DEFAULT_MAX_RETRIES }: { maxRetries?: number } = {}
   ): Promise<IEvent<MessagePayload>> {
     async function subscribe(
-      callback: (msgData: {
-        data: MessagePayload;
-        msg: { id: string; ack: () => Promise<void> };
-      }) => Promise<void>
+      callback: (msgData: { data: MessagePayload; msg: IMsg }) => Promise<void>
     ) {
       try {
         const generator = getStreamMessageGenerator(topic, 10);
 
         for await (const message of generator) {
           if (message.length && message[1] && message[1][1]) {
-            const data: Maybe<MessagePayload> = JSON.parse(message[1][1]);
             const msgId: string = String(message[0]);
+
+            const messageDataArray = message[1] as unknown as string[];
+
+            const redisMessage = messageDataArray.reduce(
+              (
+                acc: RedisMessage<Maybe<MessagePayload>>,
+                item: string,
+                index: number
+              ) => {
+                if (index % 2 === 0) {
+                  if (index + 1 < messageDataArray.length) {
+                    const value = messageDataArray[index + 1];
+                    // @ts-expect-error ignore
+                    acc[item] = value;
+                  }
+                }
+                return acc;
+              },
+              {} as RedisMessage<Maybe<MessagePayload>>
+            );
 
             let parsedData: MessagePayload;
             try {
-              parsedData = payloadSchema.parse(data);
+              parsedData = payloadSchema.parse(
+                JSON.parse(redisMessage.data as string)
+              );
             } catch (error) {
               console.error(
                 `[HERMES] Message Bus: ${topic}, message parse error`
@@ -142,13 +191,39 @@ export function Hermes({
               throw new Error("Message Parse Error");
             }
 
-            await callback({
-              data: parsedData,
-              msg: {
-                id: msgId,
-                ack: () => redisService.ackMessages(topic, groupName, msgId),
-              },
-            });
+            try {
+              await callback({
+                data: parsedData,
+                msg: {
+                  id: msgId,
+                  retryCount: Number(redisMessage.retryCount),
+                  maxRetries: Number(redisMessage.maxRetries),
+                  ack: async () =>
+                    await redisService.ackMessages(topic, groupName, msgId),
+                },
+              });
+            } catch (_error) {
+              console.error(`[HERMES] ${topic}:${msgId} Callback Error...`);
+
+              const retryCount = Number(redisMessage.retryCount);
+
+              if (retryCount < maxRetries) {
+                const retryTime =
+                  Date.now() + 1000 * Math.pow(2, retryCount + 1);
+
+                console.log(
+                  `[HERMES] Retrying ${topic}:${msgId} in ${retryTime}ms`
+                );
+
+                await redisService.scheduleMessage(
+                  topic,
+                  { ...redisMessage, retryCount: retryCount + 1 },
+                  retryTime
+                );
+              }
+
+              await redisService.ackMessages(topic, groupName, msgId);
+            }
           }
         }
       } catch (error) {
@@ -157,7 +232,10 @@ export function Hermes({
       }
     }
 
-    async function publish(payload: MessagePayload): Promise<void> {
+    async function publish(
+      payload: MessagePayload,
+      { maxRetries: taskMaxRetries = maxRetries }: { maxRetries?: number } = {}
+    ): Promise<void> {
       let parsedData: MessagePayload;
       try {
         parsedData = payloadSchema.parse(payload);
@@ -165,11 +243,16 @@ export function Hermes({
         console.error(`[HERMES] Message Bus: ${topic}, message parse error`);
         throw new Error("Message Parse Error");
       }
+
       await redisService.addToStream(
         topic,
         "*",
         "data",
-        JSON.stringify(parsedData)
+        JSON.stringify(parsedData),
+        "maxRetries",
+        taskMaxRetries.toString(),
+        "retryCount",
+        "0"
       );
     }
 

@@ -29,6 +29,14 @@ export interface RedisService {
     consumer?: string,
     minIdleTime?: number
   ): Promise<Array<string> | null>;
+  scheduleMessage<T>(
+    topic: string,
+    msgData: T,
+    timestamp: number
+  ): Promise<void>;
+  getNextScheduledMessage<T>(
+    topic: string
+  ): Promise<{ topic: string; msgData: T } | null>;
 }
 
 export function RedisService(
@@ -36,9 +44,9 @@ export function RedisService(
   groupName: string,
   consumerName: string
 ): RedisService {
-  let publisher: Redis;
-
   let redisPool: RedisPool;
+
+  let publisher: Redis;
 
   async function connect() {
     const { poolOptions, ...redisOptions } = options;
@@ -61,7 +69,9 @@ export function RedisService(
     try {
       const key = `${options.keyPrefix}*`;
 
-      const keys = await subscriber.keys(key);
+      const keys = (await subscriber.keys(key)).filter(
+        (k) => !k.endsWith("-scheduled")
+      );
 
       if (keys.length) {
         for (const key of keys) {
@@ -127,6 +137,7 @@ export function RedisService(
     const subscriber = await redisPool.getConnection();
     try {
       await subscriber.xack(streamName, groupName, ...messageIds);
+      // await subscriber.xdel(streamName, groupName, ...messageIds);
 
       await redisPool.release(subscriber);
     } catch (error: any) {
@@ -240,13 +251,67 @@ export function RedisService(
     }
   }
 
+  async function scheduleMessage<T>(
+    topic: string,
+    msgData: T,
+    timestamp: number
+  ): Promise<void> {
+    try {
+      await publisher.zadd(
+        `${topic}-scheduled`,
+        timestamp,
+        JSON.stringify(msgData)
+      );
+    } catch (error: any) {
+      console.error(`[HERMES] Error scheduling message: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async function getNextScheduledMessage<T>(
+    topic: string
+  ): Promise<{ topic: string; msgData: T } | null> {
+    const subscriber = await redisPool.getConnection();
+    try {
+      const results: string[] = (await subscriber.zrange(
+        `${topic}-scheduled`,
+        0,
+        new Date().getTime(),
+        "BYSCORE",
+        "LIMIT",
+        0,
+        1
+      )) as string[];
+
+      await redisPool.release(subscriber);
+
+      if (results && results.length && results[0]) {
+        const msgData = JSON.parse(results[0]);
+
+        await subscriber.zrem(`${topic}-scheduled`, results[0]);
+
+        return { topic, msgData };
+      }
+      return null;
+    } catch (error: any) {
+      await redisPool.release(subscriber);
+
+      console.error(
+        `[HERMES] Error getting next scheduled message: ${error.message}`
+      );
+      throw error;
+    }
+  }
+
   return {
     connect,
     disconnect,
     addToStream,
     ackMessages,
+    scheduleMessage,
     autoClaimMessages,
     createConsumerGroup,
+    getNextScheduledMessage,
     readStreamAsConsumerGroup,
   };
 }
