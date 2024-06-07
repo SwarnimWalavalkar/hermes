@@ -7,8 +7,9 @@ import {
   expectTypeOf,
   vi,
 } from "vitest";
-import { Hermes, IHermes, IMsg } from "..";
+import { Hermes } from "..";
 import { z } from "zod";
+import { IHermes, IMsg } from "../lib/types";
 
 const redisConfig = {
   host: process.env.REDIS_HOST || "0.0.0.0",
