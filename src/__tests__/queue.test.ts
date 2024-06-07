@@ -1,6 +1,5 @@
 import { afterAll, expect, describe, it, beforeAll, vi } from "vitest";
 import { Hermes, IHermes, IMsg } from "..";
-import { Redis } from "ioredis";
 import { z } from "zod";
 
 const redisConfig = {
@@ -8,8 +7,6 @@ const redisConfig = {
   port: Number(process.env.REDIS_PORT) || 6379,
   password: process.env.REDIS_PASSWORD || "",
 };
-
-const testRedis = new Redis({ ...redisConfig });
 
 describe("Queue", async () => {
   let hermes: IHermes;
@@ -67,14 +64,4 @@ describe("Queue", async () => {
   afterAll(async () => {
     await hermes.disconnect();
   });
-});
-
-afterAll(async () => {
-  await testRedis.keys(`hermes:*`, async (_, keys) => {
-    if (!!keys && keys.length > 0) {
-      await testRedis.del(keys);
-    }
-  });
-
-  testRedis.disconnect();
 });
