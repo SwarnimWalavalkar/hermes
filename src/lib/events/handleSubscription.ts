@@ -2,6 +2,7 @@ import z from "zod";
 import { IMsg, Maybe, RedisMessage } from "../types";
 import { RedisService } from "../redis/redisService";
 import getStreamMessageGenerator from "../internal/getStreamMessageGenerator";
+import handleMessageRetry, { MessageRetryOptions } from "./handleMessageRetry";
 
 export interface HandleSubscriptionsOptions<MsgPayload> {
   payloadSchema: z.Schema<MsgPayload>;
@@ -74,6 +75,17 @@ export default async function <MsgPayload>(
               maxRetries: Number(redisMessage.maxRetries),
               ack: async () =>
                 await redisService.ackMessages(topic, groupName, msgId),
+              retry: async (options?: MessageRetryOptions) => {
+                await handleMessageRetry({
+                  retryOptions: options ?? { exponentialBackoff: true },
+                  msgData: redisMessage,
+                  topic,
+                  msgId,
+                  redisService,
+                });
+
+                await redisService.ackMessages(topic, groupName, msgId);
+              },
             },
           });
         } catch (error: any) {
@@ -113,18 +125,7 @@ export default async function <MsgPayload>(
               `[HERMES] ${topic}:${msgId} Max retries exhausted... Adding to dead-letter queue...`
             );
 
-            await redisService.addToDLQ(
-              topic,
-              {
-                ...redisMessage,
-                error: {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                },
-              },
-              Date.now()
-            );
+            await redisService.addToDLQ(topic, redisMessage, Date.now());
           }
 
           await redisService.ackMessages(topic, groupName, msgId);

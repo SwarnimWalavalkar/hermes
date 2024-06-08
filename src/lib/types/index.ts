@@ -1,6 +1,14 @@
 import z from "zod";
+import { MessageRetryOptions } from "../events/handleMessageRetry";
 
 export type Maybe<T> = T | null | undefined;
+
+export type ExactlyOneKey<T, Keys extends keyof T = keyof T> = {
+  [K in Keys]: Required<Pick<T, K>> &
+    Partial<Record<Exclude<Keys, K>, undefined>> extends infer O
+    ? { [P in keyof O]: O[P] }
+    : never;
+}[Keys];
 
 export interface IBus {
   subscribe<T>(
@@ -21,6 +29,7 @@ export interface IMsg {
   retryCount: number;
   maxRetries: number;
   ack: () => Promise<void>;
+  retry: (options: MessageRetryOptions) => Promise<void>;
 }
 
 export interface IEvent<MessagePayload> {

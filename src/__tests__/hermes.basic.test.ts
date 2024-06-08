@@ -144,6 +144,42 @@ describe("Message Bus", async () => {
     expect(dlqSize).toBeGreaterThanOrEqual(1);
   });
 
+  it("should retry with the provided strategy on retry()", async () => {
+    const topic = "retry-test-topic";
+
+    const payloadSchema = z.object({ message: z.string() });
+    const msgPayload: z.infer<typeof payloadSchema> = { message: "hello" };
+
+    const event = await hermes.registerEvent(topic, payloadSchema);
+    const eventCallback = {
+      fn: async ({
+        msg,
+      }: {
+        msg: IMsg;
+        data: z.infer<typeof payloadSchema>;
+      }) => {
+        console.log("MSG_MAX_RETRIES", msg.maxRetries);
+        console.log("MSG_RETRY_COUNT", msg.retryCount);
+
+        if (msg.retryCount === 2) {
+          console.log("PROCESSED");
+          await msg.ack();
+        } else {
+          console.log("RETRYING...");
+          await msg.retry({ immediately: true });
+        }
+      },
+    };
+
+    const callbackFnSpy = vi.spyOn(eventCallback, "fn");
+
+    event.subscribe(eventCallback.fn);
+    await event.publish(msgPayload);
+
+    await new Promise((resolve) => setTimeout(resolve, 24));
+    expect(callbackFnSpy).toHaveBeenCalledTimes(3);
+  });
+
   afterAll(async () => {
     await hermes.disconnect();
   });
