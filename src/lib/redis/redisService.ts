@@ -37,6 +37,12 @@ export interface RedisService {
   getNextScheduledMessage<T>(
     topic: string
   ): Promise<{ topic: string; msgData: T } | null>;
+  addToFailedList<T>(
+    topic: string,
+    msgData: T,
+    timestamp: number
+  ): Promise<void>;
+  addToDLQ<T>(topic: string, msgData: T, timestamp: number): Promise<void>;
 }
 
 export function RedisService(
@@ -69,8 +75,9 @@ export function RedisService(
     try {
       const key = `${options.keyPrefix}*`;
 
+      const postfixes = ["scheduled", "failed", "dlq"];
       const keys = (await subscriber.keys(key)).filter(
-        (k) => !k.endsWith("-scheduled")
+        (k) => !postfixes.some((postfix) => k.endsWith(`-${postfix}`))
       );
 
       if (keys.length) {
@@ -303,11 +310,47 @@ export function RedisService(
     }
   }
 
+  async function addToFailedList<T>(
+    topic: string,
+    msgData: T,
+    timestamp: number
+  ): Promise<void> {
+    try {
+      await publisher.zadd(
+        `${topic}-failed`,
+        timestamp,
+        JSON.stringify(msgData)
+      );
+    } catch (error: any) {
+      console.error(
+        `[HERMES] Error adding message to failed list: ${error.message}`
+      );
+      throw error;
+    }
+  }
+
+  async function addToDLQ<T>(
+    topic: string,
+    msgData: T,
+    timestamp: number
+  ): Promise<void> {
+    try {
+      await publisher.zadd(`${topic}-dlq`, timestamp, JSON.stringify(msgData));
+    } catch (error: any) {
+      console.error(
+        `[HERMES] Error adding message to failed list: ${error.message}`
+      );
+      throw error;
+    }
+  }
+
   return {
     connect,
+    addToDLQ,
     disconnect,
     addToStream,
     ackMessages,
+    addToFailedList,
     scheduleMessage,
     autoClaimMessages,
     createConsumerGroup,

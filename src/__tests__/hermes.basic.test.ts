@@ -10,12 +10,15 @@ import {
 import { Hermes } from "..";
 import { z } from "zod";
 import { IHermes, IMsg } from "../lib/types";
+import Redis from "ioredis";
 
 const redisConfig = {
   host: process.env.REDIS_HOST || "0.0.0.0",
   port: Number(process.env.REDIS_PORT) || 6379,
   password: process.env.REDIS_PASSWORD || "",
 };
+
+const testRedis = new Redis({ ...redisConfig });
 
 describe("Initialize", async () => {
   it("should establish a connection and initialize successfully", async () => {
@@ -113,6 +116,34 @@ describe("Message Bus", async () => {
     }
   );
 
+  it("should go to the dlq on final failure", { timeout: 15000 }, async () => {
+    const topic = "dlq-test-topic";
+
+    const payloadSchema = z.object({ message: z.string() });
+    const msgPayload: z.infer<typeof payloadSchema> = { message: "hello" };
+
+    const event = await hermes.registerEvent(topic, payloadSchema);
+    const eventCallback = {
+      fn: async () => {
+        throw new Error("DQL Test Error");
+      },
+    };
+
+    const callbackFnSpy = vi.spyOn(eventCallback, "fn");
+
+    event.subscribe(eventCallback.fn);
+    await event.publish(msgPayload);
+
+    await new Promise((resolve) => setTimeout(resolve, 14500));
+
+    expect(callbackFnSpy).toHaveBeenCalledTimes(4);
+
+    const DQLKey = `hermes:${topic}-dlq`;
+    const dlqSize = await testRedis.zcard(DQLKey);
+
+    expect(dlqSize).toBeGreaterThanOrEqual(1);
+  });
+
   afterAll(async () => {
     await hermes.disconnect();
   });
@@ -157,4 +188,8 @@ describe("Service", async () => {
   afterAll(async () => {
     await hermes.disconnect();
   });
+});
+
+afterAll(async () => {
+  testRedis.disconnect();
 });

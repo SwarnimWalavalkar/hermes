@@ -76,8 +76,23 @@ export default async function <MsgPayload>(
                 await redisService.ackMessages(topic, groupName, msgId),
             },
           });
-        } catch (_error) {
-          console.error(`[HERMES] ${topic}:${msgId} Callback Error...`);
+        } catch (error: any) {
+          console.error(
+            `[HERMES] ${topic}:${msgId} Callback Error... ${error.message}`
+          );
+
+          await redisService.addToFailedList(
+            topic,
+            {
+              ...redisMessage,
+              error: {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              },
+            },
+            Date.now()
+          );
 
           const retryCount = Number(redisMessage.retryCount);
 
@@ -92,6 +107,23 @@ export default async function <MsgPayload>(
               topic,
               { ...redisMessage, retryCount: retryCount + 1 },
               retryTime
+            );
+          } else {
+            console.error(
+              `[HERMES] ${topic}:${msgId} Max retries exhausted... Adding to dead-letter queue...`
+            );
+
+            await redisService.addToDLQ(
+              topic,
+              {
+                ...redisMessage,
+                error: {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                },
+              },
+              Date.now()
             );
           }
 
