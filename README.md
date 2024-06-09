@@ -17,10 +17,13 @@ npm i @swarnim/hermes
 - Type-safety
 - Schema validation with [Zod](https://github.com/colinhacks/zod)
 - Horizontally scalable
-- Highly reliable
-  - at-least-once system
-  - consumers need to explicitly acknowledge that a message has been processed
-  - If (when) a consumer dies, all of the pending messages assigned to that consumer are transferred to another consumer after a timeout
+- Reliability
+- Redis Streams do the heavy lifting
+- consumers need to explicitly acknowledge that a message has been processed
+- If (when) a consumer dies, all of the pending messages assigned to that consumer are transferred to another consumer after a timeout
+- Retries with exponential backoff
+  - Upto a configurable `maxRetries` number of times
+  - Automatically triggered on failures
 
 # Example
 
@@ -103,17 +106,20 @@ await userSignUpEvent.publish({
 await hermesTest.disconnect();
 ```
 
-# TODO
-
-- [x] Connection Pooling for Redis
-- [x] Consumer transfer on timeout
-- [ ] Custom Logger
-  - [ ] log levels
-- [ ] Better observability tools
-
 ### Feature Ideas
 
 - [ ] Job scheduler
-- ...
+- [ ] Better concurrency support
+- [ ] Allow bulk publishing messages
+  - [ ] With pipelining to optimize Redis calls and effective chunking
+- [ ] Message de-duplication
 
+---
 # Contributing
+
+This project follows the [all-contributors](https://allcontributors.org) specification.
+Contributions of any kind are welcome!
+
+## LICENSE
+
+[MIT](LICENSE)
