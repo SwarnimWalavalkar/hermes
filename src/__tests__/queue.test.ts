@@ -1,7 +1,6 @@
 import { afterAll, expect, describe, it, beforeAll, vi } from "vitest";
-import { Hermes } from "..";
+import { Hermes, IHermes, IMsg } from "..";
 import { z } from "zod";
-import { IHermes, IMsg } from "../lib/types";
 
 const redisConfig = {
   host: process.env.REDIS_HOST || "0.0.0.0",

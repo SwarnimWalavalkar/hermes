@@ -18,6 +18,8 @@ export interface IBus {
   publish<T>(topic: string, data: T): Promise<void>;
 }
 
+export type RawRedisMessage = [string, string[][]];
+
 export interface RedisMessage<T> {
   data: T;
   maxRetries: number;

@@ -1,5 +1,5 @@
 import { RedisService } from "../redis/redisService";
-import { RedisMessage } from "../types";
+import { RawRedisMessage, RedisMessage } from "../types";
 
 export interface StreamMessagesGeneratorOptions {
   streamName: string;
@@ -13,7 +13,7 @@ export default async function* ({
   streamName,
   count,
   isAlive,
-}: StreamMessagesGeneratorOptions) {
+}: StreamMessagesGeneratorOptions): AsyncGenerator<RawRedisMessage> {
   let fetchNewMessages = true;
   while (isAlive()) {
     const results = fetchNewMessages

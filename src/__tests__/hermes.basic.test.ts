@@ -7,9 +7,8 @@ import {
   expectTypeOf,
   vi,
 } from "vitest";
-import { Hermes } from "..";
+import { Hermes, IHermes, IMsg } from "..";
 import { z } from "zod";
-import { IHermes, IMsg } from "../lib/types";
 import Redis from "ioredis";
 
 const redisConfig = {

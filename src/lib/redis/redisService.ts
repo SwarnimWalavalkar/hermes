@@ -1,5 +1,6 @@
 import Redis, { RedisOptions } from "ioredis";
 import { PoolOptions, RedisPool } from "./redisPool";
+import { RawRedisMessage } from "../types";
 
 export interface RedisService {
   connect(): Promise<void>;
@@ -21,14 +22,14 @@ export interface RedisService {
     blockMs?: number,
     group?: string,
     consumer?: string
-  ): Promise<Array<string> | null>;
+  ): Promise<Array<RawRedisMessage> | null>;
   autoClaimMessages(
     streamName: string,
     count?: number,
     group?: string,
     consumer?: string,
     minIdleTime?: number
-  ): Promise<Array<string> | null>;
+  ): Promise<Array<RawRedisMessage> | null>;
   scheduleMessage<T>(
     topic: string,
     msgData: T,
@@ -186,7 +187,7 @@ export function RedisService(
     blockMs: number = 1,
     group: string = groupName,
     consumer: string = consumerName
-  ): Promise<Array<string> | null> {
+  ): Promise<Array<RawRedisMessage> | null> {
     const subscriber = await redisPool.getConnection();
     try {
       const results: string[][] = (await subscriber.xreadgroup(
@@ -207,7 +208,7 @@ export function RedisService(
       if (results && results.length && results[0]) {
         const [_key, messages] = results[0];
 
-        if (messages) return messages as unknown as string[];
+        if (messages) return messages as unknown as Array<RawRedisMessage>;
       }
       return null;
     } catch (error: any) {
@@ -229,7 +230,7 @@ export function RedisService(
     group: string = groupName,
     consumer: string = consumerName,
     minIdleTime: number = 5000
-  ): Promise<Array<string> | null> {
+  ): Promise<Array<RawRedisMessage> | null> {
     const subscriber = await redisPool.getConnection();
     try {
       const results: string[][] = (await subscriber.xautoclaim(
@@ -247,7 +248,7 @@ export function RedisService(
       const [_, messages] = results;
 
       if (messages && messages.length) {
-        return messages;
+        return messages as unknown as Array<RawRedisMessage>;
       }
       return null;
     } catch (error: any) {

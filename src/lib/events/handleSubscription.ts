@@ -1,5 +1,5 @@
 import z from "zod";
-import { IMsg, Maybe, RedisMessage } from "../types";
+import { IMsg, RawRedisMessage, RedisMessage } from "../types";
 import { RedisService } from "../redis/redisService";
 import getStreamMessageGenerator from "../internal/getStreamMessageGenerator";
 import handleMessageRetry, { MessageRetryOptions } from "./handleMessageRetry";
@@ -36,35 +36,12 @@ export default async function <MsgPayload>(
       if (message.length && message[1] && message[1][1]) {
         const msgId: string = String(message[0]);
 
-        const messageDataArray = message[1] as unknown as string[];
+        const redisMessage = parseRedisMessage<MsgPayload>(message);
 
-        const redisMessage = messageDataArray.reduce(
-          (
-            acc: RedisMessage<Maybe<MsgPayload>>,
-            item: string,
-            index: number
-          ) => {
-            if (index % 2 === 0) {
-              if (index + 1 < messageDataArray.length) {
-                const value = messageDataArray[index + 1];
-                // @ts-expect-error ignore
-                acc[item] = value;
-              }
-            }
-            return acc;
-          },
-          {} as RedisMessage<Maybe<MsgPayload>>
+        const parsedData: MsgPayload = await validateMessagePayload(
+          redisMessage.data as string,
+          payloadSchema
         );
-
-        let parsedData: MsgPayload;
-        try {
-          parsedData = payloadSchema.parse(
-            JSON.parse(redisMessage.data as string)
-          );
-        } catch (error) {
-          console.error(`[HERMES] Message Bus: ${topic}, message parse error`);
-          throw new Error("Message Parse Error");
-        }
 
         try {
           await callback({
@@ -89,51 +66,103 @@ export default async function <MsgPayload>(
             },
           });
         } catch (error: any) {
-          console.error(
-            `[HERMES] ${topic}:${msgId} Callback Error... ${error.message}`
-          );
-
-          await redisService.addToFailedList(
+          await handleFailure(
             topic,
-            {
-              ...redisMessage,
-              error: {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              },
-            },
-            Date.now()
+            groupName,
+            redisMessage,
+            msgId,
+            maxRetries,
+            redisService,
+            error
           );
-
-          const retryCount = Number(redisMessage.retryCount);
-
-          if (retryCount < maxRetries) {
-            const retryTime = Date.now() + 1000 * Math.pow(2, retryCount + 1);
-
-            console.log(
-              `[HERMES] Retrying ${topic}:${msgId} in ${retryTime}ms`
-            );
-
-            await redisService.scheduleMessage(
-              topic,
-              { ...redisMessage, retryCount: retryCount + 1 },
-              retryTime
-            );
-          } else {
-            console.error(
-              `[HERMES] ${topic}:${msgId} Max retries exhausted... Adding to dead-letter queue...`
-            );
-
-            await redisService.addToDLQ(topic, redisMessage, Date.now());
-          }
-
-          await redisService.ackMessages(topic, groupName, msgId);
         }
       }
     }
-  } catch (error) {
-    console.error("[HERMES] Error while subscribing:", error);
+  } catch (error: any) {
+    console.error("[HERMES] Subscriber Error:", error.message);
     throw error;
   }
 }
+
+const parseRedisMessage = <T>(message: RawRedisMessage): RedisMessage<T> => {
+  const messageDataArray = message[1] as unknown as string[];
+
+  const redisMessage = messageDataArray.reduce(
+    (acc: RedisMessage<T>, item: string, index: number) => {
+      if (index % 2 === 0) {
+        if (index + 1 < messageDataArray.length) {
+          const value = messageDataArray[index + 1];
+          // @ts-expect-error ignore
+          acc[item] = value;
+        }
+      }
+      return acc;
+    },
+    {} as RedisMessage<T>
+  );
+
+  return redisMessage;
+};
+
+const validateMessagePayload = async <T>(
+  payload: string,
+  payloadSchema: z.Schema<T>
+): Promise<T> => {
+  try {
+    return payloadSchema.parse(JSON.parse(payload));
+  } catch (error) {
+    throw new Error("Message Parse Error");
+  }
+};
+
+const handleFailure = async (
+  topic: string,
+  groupName: string,
+  redisMessage: RedisMessage<any>,
+  msgId: string,
+  maxRetries: number,
+  redisService: RedisService,
+  error: Error
+) => {
+  try {
+    console.error(
+      `[HERMES] ${topic}:${msgId} Callback Error... ${error.message}`
+    );
+    await redisService.addToFailedList(
+      topic,
+      {
+        ...redisMessage,
+        error: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        },
+      },
+      Date.now()
+    );
+
+    const retryCount = Number(redisMessage.retryCount);
+
+    if (retryCount < maxRetries) {
+      const retryTime = Date.now() + 1000 * Math.pow(2, retryCount + 1);
+
+      console.log(`[HERMES] Retrying ${topic}:${msgId} in ${retryTime}ms`);
+
+      await redisService.scheduleMessage(
+        topic,
+        { ...redisMessage, retryCount: retryCount + 1 },
+        retryTime
+      );
+    } else {
+      console.error(
+        `[HERMES] ${topic}:${msgId} Max retries exhausted... Adding to dead-letter queue...`
+      );
+
+      await redisService.addToDLQ(topic, redisMessage, Date.now());
+    }
+
+    await redisService.ackMessages(topic, groupName, msgId);
+  } catch (error) {
+    throw error;
+  }
+};
