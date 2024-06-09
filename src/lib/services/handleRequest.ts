@@ -51,7 +51,9 @@ export default async function <RequestType, ResponseType>({
     const message = messageResp.value;
 
     if (message[0] && message[1] && message[1][1]) {
-      const data: Maybe<ResponseType> = JSON.parse(message[1][1]);
+      const data: Maybe<ResponseType> = JSON.parse(
+        message[1][1] as unknown as string
+      );
       const msgId = message[0];
 
       let parsedData: ResponseType;

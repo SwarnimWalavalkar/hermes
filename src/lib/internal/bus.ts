@@ -28,7 +28,7 @@ export default {
 
       for await (const message of generator) {
         if (message.length && message[1] && message[1][1]) {
-          const data: T = JSON.parse(message[1][1]);
+          const data: T = JSON.parse(message[1][1] as unknown as string);
           const msgId: string = String(message[0]);
 
           await redisService.ackMessages(topic, groupName, msgId);
