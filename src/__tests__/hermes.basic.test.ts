@@ -8,8 +8,8 @@ import {
   vi,
 } from "vitest";
 import { Hermes, IHermes, IMsg } from "..";
-import { Redis } from "ioredis";
 import { z } from "zod";
+import Redis from "ioredis";
 
 const redisConfig = {
   host: process.env.REDIS_HOST || "0.0.0.0",
@@ -73,6 +73,112 @@ describe("Message Bus", async () => {
     expect(callbackFnSpy).toHaveBeenCalledOnce();
   });
 
+  it(
+    "should retry with exponential backoff on error",
+    { timeout: 7500 },
+    async () => {
+      const topic = "fail-test-topic";
+
+      const payloadSchema = z.object({ message: z.string() });
+      const msgPayload: z.infer<typeof payloadSchema> = { message: "hello" };
+
+      const event = await hermes.registerEvent(topic, payloadSchema);
+      const eventCallback = {
+        fn: async ({
+          msg,
+          data,
+        }: {
+          msg: IMsg;
+          data: z.infer<typeof payloadSchema>;
+        }) => {
+          console.log("MSG_MAX_RETRIES", msg.maxRetries);
+          console.log("MSG_RETRY_COUNT", msg.retryCount);
+
+          if (msg.retryCount === msg.maxRetries - 1) {
+            console.log("SUCCESS");
+
+            await msg.ack();
+          } else {
+            console.log("FAIL");
+            throw new Error("Test Error");
+          }
+        },
+      };
+
+      const callbackFnSpy = vi.spyOn(eventCallback, "fn");
+
+      event.subscribe(eventCallback.fn);
+      await event.publish(msgPayload);
+
+      await new Promise((resolve) => setTimeout(resolve, 7000));
+      expect(callbackFnSpy).toHaveBeenCalledTimes(3);
+    }
+  );
+
+  it("should go to the dlq on final failure", { timeout: 15000 }, async () => {
+    const topic = "dlq-test-topic";
+
+    const payloadSchema = z.object({ message: z.string() });
+    const msgPayload: z.infer<typeof payloadSchema> = { message: "hello" };
+
+    const event = await hermes.registerEvent(topic, payloadSchema);
+    const eventCallback = {
+      fn: async () => {
+        throw new Error("DQL Test Error");
+      },
+    };
+
+    const callbackFnSpy = vi.spyOn(eventCallback, "fn");
+
+    event.subscribe(eventCallback.fn);
+    await event.publish(msgPayload);
+
+    await new Promise((resolve) => setTimeout(resolve, 14500));
+
+    expect(callbackFnSpy).toHaveBeenCalledTimes(4);
+
+    const DQLKey = `hermes:${topic}-dlq`;
+    const dlqSize = await testRedis.zcard(DQLKey);
+
+    expect(dlqSize).toBeGreaterThanOrEqual(1);
+  });
+
+  it("should retry with the provided strategy on retry()", async () => {
+    const topic = "retry-test-topic";
+
+    const payloadSchema = z.object({ message: z.string() });
+    const msgPayload: z.infer<typeof payloadSchema> = { message: "hello" };
+
+    const event = await hermes.registerEvent(topic, payloadSchema);
+    const eventCallback = {
+      fn: async ({
+        msg,
+      }: {
+        msg: IMsg;
+        data: z.infer<typeof payloadSchema>;
+      }) => {
+        console.log("MSG_MAX_RETRIES", msg.maxRetries);
+        console.log("MSG_RETRY_COUNT", msg.retryCount);
+
+        if (msg.retryCount === 2) {
+          console.log("PROCESSED");
+          await msg.ack();
+        } else {
+          console.log("RETRYING...");
+          await msg.retry({ immediately: true });
+        }
+      },
+    };
+
+    const callbackFnSpy = vi.spyOn(eventCallback, "fn");
+
+    event.subscribe(eventCallback.fn);
+    await event.publish(msgPayload);
+
+    await new Promise((resolve) => setTimeout(resolve, 24));
+    expect(callbackFnSpy).toHaveBeenCalledTimes(3);
+  });
+
   afterAll(async () => {
     await hermes.disconnect();
   });
@@ -120,11 +226,5 @@ describe("Service", async () => {
 });
 
 afterAll(async () => {
-  await testRedis.keys(`hermes:*`, async (_, keys) => {
-    if (!!keys && keys.length > 0) {
-      await testRedis.del(keys);
-    }
-  });
-
   testRedis.disconnect();
 });
