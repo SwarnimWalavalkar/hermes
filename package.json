@@ -12,6 +12,12 @@
     "release": "pnpm run build && changeset publish",
     "check": "tsc",
     "test": "vitest --run",
+    "test:load": "vitest --run src/__tests__/load",
+    "load:services": "tsx src/__tests__/load/services-load-test.ts",
+    "load:events": "tsx src/__tests__/load/events-load-test.ts",
+    "load:mixed": "tsx src/__tests__/load/mixed-load-test.ts",
+    "load:all": "tsx src/__tests__/load/run-all-tests.ts",
+    "load:monitor": "tsx src/__tests__/load/performance-monitor.ts",
     "docker:redis": "docker run -p 6379:6379 --rm --name hermes_test_redis redis:alpine"
   },
   "homepage": "https://github.com/SwarnimWalavalkar/hermes#readme",
@@ -38,7 +44,10 @@
     "@types/node": "20.14.2",
     "tsup": "^8.1.0",
     "typescript": "^5.4.5",
-    "vitest": "1.6.0"
+    "vitest": "1.6.0",
+    "autocannon": "^7.15.0",
+    "@types/autocannon": "^4.1.4",
+    "tsx": "^4.7.0"
   },
   "dependencies": {
     "generic-pool": "3.9.0",

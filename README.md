@@ -106,6 +106,51 @@ await userSignUpEvent.publish({
 await hermesTest.disconnect();
 ```
 
+## Load Testing
+
+Hermes includes a comprehensive load testing suite to help you evaluate performance and optimize your configuration.
+
+### Quick Start
+
+```bash
+# Start Redis
+npm run docker:redis
+
+# Run all load tests
+npm run load:all
+
+# Or run specific test categories
+npm run load:services  # RPC/Service load tests
+npm run load:events    # Pub/Sub/Event load tests  
+npm run load:mixed     # Mixed workload tests
+
+# Run via Vitest (for CI/CD)
+npm run test:load
+
+# Real-time performance monitoring
+npm run load:monitor
+```
+
+### Test Categories
+
+- **Service Load Tests** - RPC request/response patterns under various loads
+- **Event Load Tests** - Pub/sub message bus patterns with multiple subscribers
+- **Mixed Workload Tests** - Combined service and event scenarios
+- **Stress Tests** - High concurrency and volume scenarios
+- **Endurance Tests** - Long-running stability tests
+- **Error Recovery Tests** - Failure handling and retry mechanisms
+
+### Performance Metrics
+
+The load testing suite measures:
+- **Throughput** (operations/second)
+- **Latency** (average, P95, P99)
+- **Error rates** and recovery
+- **Memory usage** and growth
+- **Resource utilization**
+
+See [Load Testing Documentation](src/__tests__/load/README.md) for detailed information.
+
 ### Feature Ideas
 
 - [ ] Job scheduler
